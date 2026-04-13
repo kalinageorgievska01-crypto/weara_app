@@ -3,10 +3,110 @@ import 'dart:io';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 
 final List<XFile> capturedClothingPhotos = [];
+final ValueNotifier<String?> selectedGenderNotifier = ValueNotifier(null);
 
-void main() {
+// Hive box for users
+late Box<Map> usersBox;
+
+class UserData {
+  final String username;
+  final String password;
+  final String name;
+  final String gender;
+  final String language;
+
+  UserData({
+    required this.username,
+    required this.password,
+    required this.name,
+    required this.gender,
+    required this.language,
+  });
+
+  Map<String, dynamic> toMap() {
+    return {
+      'username': username,
+      'password': password,
+      'name': name,
+      'gender': gender,
+      'language': language,
+    };
+  }
+
+  static UserData fromMap(Map<dynamic, dynamic> map) {
+    return UserData(
+      username: map['username'] as String,
+      password: map['password'] as String,
+      name: map['name'] as String,
+      gender: map['gender'] as String,
+      language: map['language'] as String,
+    );
+  }
+}
+
+class AuthService {
+  static Future<bool> registerUser(UserData user) async {
+    try {
+      if (usersBox.containsKey(user.username)) {
+        return false;
+      }
+      await usersBox.put(user.username, user.toMap());
+      return true;
+    } catch (e) {
+      debugPrint('Error registering user: $e');
+      return false;
+    }
+  }
+
+  static Future<UserData?> loginUser(
+      String username, String password) async {
+    try {
+      if (!usersBox.containsKey(username)) {
+        return null;
+      }
+      final userData = usersBox.get(username) as Map;
+      if (userData['password'] == password) {
+        return UserData.fromMap(userData);
+      }
+      return null;
+    } catch (e) {
+      debugPrint('Error logging in: $e');
+      return null;
+    }
+  }
+
+  static Future<UserData?> getUserByUsername(String username) async {
+    try {
+      if (!usersBox.containsKey(username)) {
+        return null;
+      }
+      final userData = usersBox.get(username) as Map;
+      return UserData.fromMap(userData);
+    } catch (e) {
+      debugPrint('Error getting user: $e');
+      return null;
+    }
+  }
+}
+
+Color _genderThemeColor(String? gender) {
+  switch (gender) {
+    case 'Female':
+      return const Color(0xFFD36C9A);
+    case 'Male':
+      return const Color(0xFF4A90E2);
+    default:
+      return Colors.black;
+  }
+}
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Hive.initFlutter();
+  usersBox = await Hive.openBox<Map>('users');
   runApp(const WearaApp());
 }
 
@@ -15,10 +115,44 @@ class WearaApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
-      title: 'Weara',
-      debugShowCheckedModeBanner: false,
-      home: SplashScreen(),
+    return ValueListenableBuilder<String?>(
+      valueListenable: selectedGenderNotifier,
+      builder: (context, selectedGender, child) {
+        final themeColor = _genderThemeColor(selectedGender);
+        return MaterialApp(
+          title: 'Weara',
+          debugShowCheckedModeBanner: false,
+          theme: ThemeData(
+            useMaterial3: true,
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: themeColor,
+              brightness: Brightness.light,
+            ),
+            appBarTheme: AppBarTheme(
+              backgroundColor: themeColor,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              titleTextStyle: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+              ),
+              iconTheme: const IconThemeData(color: Colors.white),
+            ),
+            elevatedButtonTheme: ElevatedButtonThemeData(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: themeColor,
+                foregroundColor: Colors.white,
+                textStyle: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+            inputDecorationTheme: const InputDecorationTheme(
+              border: OutlineInputBorder(),
+            ),
+          ),
+          home: const SplashScreen(),
+        );
+      },
     );
   }
 }
@@ -127,22 +261,35 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  void _submit() {
+  void _submit() async {
     if (_formKey.currentState?.validate() ?? false) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Logging in as ${_usernameController.text}')),
+      final user = await AuthService.loginUser(
+        _usernameController.text,
+        _passwordController.text,
       );
+
+      if (!mounted) return;
+
+      if (user != null) {
+        selectedGenderNotifier.value = user.gender;
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const SelfieScreen()),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Invalid username or password'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Login'),
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
-      ),
+      appBar: AppBar(title: const Text('Login')),
       body: Padding(
         padding: const EdgeInsets.all(24.0),
         child: Form(
@@ -232,22 +379,40 @@ class _RegisterScreenState extends State<RegisterScreen> {
     super.dispose();
   }
 
-  void _submit() {
+  void _submit() async {
     if (_formKey.currentState?.validate() ?? false) {
-      Navigator.of(
-        context,
-      ).push(MaterialPageRoute(builder: (_) => const SelfieScreen()));
+      final newUser = UserData(
+        username: _usernameController.text,
+        password: _passwordController.text,
+        name: _nameController.text,
+        gender: _selectedGender ?? 'Other',
+        language: _selectedLanguage ?? 'English',
+      );
+
+      final success = await AuthService.registerUser(newUser);
+
+      if (!mounted) return;
+
+      if (success) {
+        selectedGenderNotifier.value = _selectedGender;
+        Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const SelfieScreen()));
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Username already exists'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Register'),
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
-      ),
+      appBar: AppBar(title: const Text('Register')),
       body: Padding(
         padding: const EdgeInsets.all(24.0),
         child: Form(
@@ -347,6 +512,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       .toList(),
                   onChanged: (value) => setState(() {
                     _selectedGender = value;
+                    selectedGenderNotifier.value = value;
                   }),
                   validator: (value) {
                     if (value == null || value.isEmpty) {
@@ -503,11 +669,7 @@ class _SelfieScreenState extends State<SelfieScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Take Selfie'),
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
-      ),
+      appBar: AppBar(title: const Text('Take Selfie')),
       body: Column(
         children: [
           Expanded(
@@ -562,7 +724,9 @@ class _SelfieScreenState extends State<SelfieScreen> {
                               ElevatedButton(
                                 onPressed: _resetCapture,
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.black,
+                                  backgroundColor: Theme.of(
+                                    context,
+                                  ).colorScheme.primary,
                                 ),
                                 child: const Text('Restart'),
                               ),
@@ -570,7 +734,9 @@ class _SelfieScreenState extends State<SelfieScreen> {
                               ElevatedButton(
                                 onPressed: _goToPlan,
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.blueAccent,
+                                  backgroundColor: Theme.of(
+                                    context,
+                                  ).colorScheme.primary,
                                 ),
                                 child: const Text('Next'),
                               ),
@@ -689,11 +855,7 @@ class PlanChoiceScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Choose Your Pack'),
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
-      ),
+      appBar: AppBar(title: const Text('Choose Your Pack')),
       body: Padding(
         padding: const EdgeInsets.all(24.0),
         child: Column(
@@ -712,14 +874,17 @@ class PlanChoiceScreen extends StatelessWidget {
             const SizedBox(height: 32),
             ElevatedButton(
               onPressed: () {
+                final isFemale = selectedGenderNotifier.value == 'Female';
                 Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (_) => const ClothesCategoryScreen(),
+                    builder: (_) => isFemale
+                        ? const FemaleFreeCategoryScreen()
+                        : const ClothesCategoryScreen(),
                   ),
                 );
               },
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green,
+                backgroundColor: const Color(0xFFFF1493),
                 padding: const EdgeInsets.symmetric(vertical: 16),
               ),
               child: const Text('Free'),
@@ -727,17 +892,309 @@ class PlanChoiceScreen extends StatelessWidget {
             const SizedBox(height: 16),
             ElevatedButton(
               onPressed: () {
+                final isFemale = selectedGenderNotifier.value == 'Female';
                 Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (_) => const PremiumCategoryScreen(),
+                    builder: (_) => isFemale
+                        ? const FemaleClothesScreen()
+                        : const PremiumCategoryScreen(),
                   ),
                 );
               },
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.orangeAccent,
+                backgroundColor: const Color(0xFFFFB6C1),
                 padding: const EdgeInsets.symmetric(vertical: 16),
               ),
               child: const Text('Premium - \$5'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class FemaleFreeCategoryScreen extends StatelessWidget {
+  const FemaleFreeCategoryScreen({super.key});
+
+  static const List<Map<String, String>> _femaleCategories = [
+    {
+      'name': 'Shorts',
+      'image': 'assets/female/1_shorts.jpg',
+    },
+    {
+      'name': 'Dresses',
+      'image': 'assets/female/4_dress.jpg',
+    },
+    {
+      'name': 'Skirts',
+      'image': 'assets/female/5_skirts.jpg',
+    },
+    {
+      'name': 'Pants/Sweats',
+      'image': 'assets/female/6_pants.jpg',
+    },
+    {
+      'name': 'Jeans',
+      'image': 'assets/female/7_jeans.jpg',
+    },
+    {
+      'name': 'Shirts',
+      'image': 'assets/female/8_shirts.jpg',
+    },
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Select'),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'Select a category to photograph clothes.',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 24),
+            Expanded(
+              child: GridView.count(
+                crossAxisCount: 3,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+                childAspectRatio: 0.85,
+                children: _femaleCategories.map((item) {
+                  return GestureDetector(
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              ClothesCameraScreen(category: item['name']!),
+                        ),
+                      );
+                    },
+                    child: Card(
+                      elevation: 4,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: Image.asset(
+                              item['image']!,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Container(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .primary
+                                      .withAlpha(100),
+                                  child: const Center(
+                                    child: Icon(
+                                      Icons.checkroom,
+                                      size: 32,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                          Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(12),
+                              gradient: LinearGradient(
+                                begin: Alignment.bottomCenter,
+                                end: Alignment.topCenter,
+                                colors: [
+                                  Colors.black.withAlpha(150),
+                                  Colors.transparent,
+                                ],
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            bottom: 0,
+                            left: 0,
+                            right: 0,
+                            child: Padding(
+                              padding: const EdgeInsets.all(8.0),
+                              child: Text(
+                                item['name']!,
+                                textAlign: TextAlign.center,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const OutfitCreationScreen(),
+                  ),
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor:
+                    Theme.of(context).colorScheme.primary,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+              ),
+              child: const Text('Done'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class FemaleClothesScreen extends StatelessWidget {
+  const FemaleClothesScreen({super.key});
+
+  static const List<Map<String, String>> _femaleCategories = [
+    {'name': 'Shorts', 'image': 'assets/female/1_shorts.jpg'},
+    {'name': 'Shoes', 'image': 'assets/female/2_shoes.jpg'},
+    {'name': 'Jewelry', 'image': 'assets/female/3_jewelry.jpg'},
+    {'name': 'Dresses', 'image': 'assets/female/4_dress.jpg'},
+    {'name': 'Skirts', 'image': 'assets/female/5_skirts.jpg'},
+    {'name': 'Pants/Sweats', 'image': 'assets/female/6_pants.jpg'},
+    {'name': 'Jeans', 'image': 'assets/female/7_jeans.jpg'},
+    {'name': 'Shirts', 'image': 'assets/female/8_shirts.jpg'},
+    {'name': 'Bags', 'image': 'assets/female/9_bags.jpg'},
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Select')),
+      body: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'Select a category to photograph clothes.',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 24),
+            Expanded(
+              child: GridView.count(
+                crossAxisCount: 3,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+                childAspectRatio: 0.85,
+                children: _femaleCategories.map((item) {
+                  return GestureDetector(
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              ClothesCameraScreen(category: item['name']!),
+                        ),
+                      );
+                    },
+                    child: Card(
+                      elevation: 4,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: Image.asset(
+                              item['image']!,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Container(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.primary.withAlpha(100),
+                                  child: const Center(
+                                    child: Icon(
+                                      Icons.checkroom,
+                                      size: 32,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                          Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(12),
+                              gradient: LinearGradient(
+                                begin: Alignment.bottomCenter,
+                                end: Alignment.topCenter,
+                                colors: [
+                                  Colors.black.withAlpha(150),
+                                  Colors.transparent,
+                                ],
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            bottom: 0,
+                            left: 0,
+                            right: 0,
+                            child: Padding(
+                              padding: const EdgeInsets.all(8.0),
+                              child: Text(
+                                item['name']!,
+                                textAlign: TextAlign.center,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const OutfitCreationScreen(),
+                  ),
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.primary,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+              ),
+              child: const Text('Done'),
             ),
           ],
         ),
@@ -758,14 +1215,29 @@ class ClothesCategoryScreen extends StatelessWidget {
     'Pants/Sweats',
   ];
 
+  static String _getCategoryImage(String category) {
+    switch (category) {
+      case 'Shirts':
+        return 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=300&h=300&fit=crop';
+      case 'Skirts':
+        return 'https://images.unsplash.com/photo-1598305245394-8e4b77285028?w=300&h=300&fit=crop';
+      case 'Jeans':
+        return 'https://images.unsplash.com/photo-1542272604-787c62d465d1?w=300&h=300&fit=crop';
+      case 'Dresses':
+        return 'https://images.unsplash.com/photo-1595777707802-41d92a8ef921?w=300&h=300&fit=crop';
+      case 'Shorts':
+        return 'https://images.unsplash.com/photo-1612818498360-9e4b235f046d?w=300&h=300&fit=crop';
+      case 'Pants/Sweats':
+        return 'https://images.unsplash.com/photo-1506629082847-11d82165b63d?w=300&h=300&fit=crop';
+      default:
+        return 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=300&h=300&fit=crop';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Select'),
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
-      ),
+      appBar: AppBar(title: const Text('Select')),
       body: Padding(
         padding: const EdgeInsets.all(24.0),
         child: Column(
@@ -781,10 +1253,10 @@ class ClothesCategoryScreen extends StatelessWidget {
                 crossAxisCount: 2,
                 crossAxisSpacing: 16,
                 mainAxisSpacing: 16,
-                childAspectRatio: 1.2,
+                childAspectRatio: 1.0,
                 children: _categories.map((category) {
-                  return ElevatedButton(
-                    onPressed: () {
+                  return GestureDetector(
+                    onTap: () {
                       Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (_) =>
@@ -792,14 +1264,79 @@ class ClothesCategoryScreen extends StatelessWidget {
                         ),
                       );
                     },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.black,
-                      padding: const EdgeInsets.all(16),
-                    ),
-                    child: Text(
-                      category,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(fontSize: 16),
+                    child: Card(
+                      elevation: 4,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(16),
+                            child: Image.network(
+                              _getCategoryImage(category),
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Container(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.primary.withAlpha(100),
+                                  child: Center(
+                                    child: Icon(
+                                      Icons.checkroom,
+                                      size: 40,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                );
+                              },
+                              loadingBuilder:
+                                  (context, child, loadingProgress) {
+                                    if (loadingProgress == null) return child;
+                                    return Container(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.primary.withAlpha(50),
+                                      child: const Center(
+                                        child: CircularProgressIndicator(),
+                                      ),
+                                    );
+                                  },
+                            ),
+                          ),
+                          Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(16),
+                              gradient: LinearGradient(
+                                begin: Alignment.bottomCenter,
+                                end: Alignment.topCenter,
+                                colors: [
+                                  Colors.black.withAlpha(150),
+                                  Colors.transparent,
+                                ],
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            bottom: 0,
+                            left: 0,
+                            right: 0,
+                            child: Padding(
+                              padding: const EdgeInsets.all(12.0),
+                              child: Text(
+                                category,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   );
                 }).toList(),
@@ -815,7 +1352,7 @@ class ClothesCategoryScreen extends StatelessWidget {
                 );
               },
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.black,
+                backgroundColor: Theme.of(context).colorScheme.primary,
                 padding: const EdgeInsets.symmetric(vertical: 16),
               ),
               child: const Text('Done'),
@@ -842,14 +1379,35 @@ class PremiumCategoryScreen extends StatelessWidget {
     'Shoes',
   ];
 
+  static String _getCategoryImage(String category) {
+    switch (category) {
+      case 'Shirts':
+        return 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=300&h=300&fit=crop';
+      case 'Skirts':
+        return 'https://images.unsplash.com/photo-1598305245394-8e4b77285028?w=300&h=300&fit=crop';
+      case 'Jeans':
+        return 'https://images.unsplash.com/photo-1542272604-787c62d465d1?w=300&h=300&fit=crop';
+      case 'Dresses':
+        return 'https://images.unsplash.com/photo-1595777707802-41d92a8ef921?w=300&h=300&fit=crop';
+      case 'Shorts':
+        return 'https://images.unsplash.com/photo-1612818498360-9e4b235f046d?w=300&h=300&fit=crop';
+      case 'Pants/Sweats':
+        return 'https://images.unsplash.com/photo-1506629082847-11d82165b63d?w=300&h=300&fit=crop';
+      case 'Jewelry':
+        return 'https://images.unsplash.com/photo-1515562141207-5dab665231df?w=300&h=300&fit=crop';
+      case 'Bags':
+        return 'https://images.unsplash.com/photo-1548036328-c9fa89d128fa?w=300&h=300&fit=crop';
+      case 'Shoes':
+        return 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=300&h=300&fit=crop';
+      default:
+        return 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=300&h=300&fit=crop';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Premium Categories'),
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
-      ),
+      appBar: AppBar(title: const Text('Premium Categories')),
       body: Padding(
         padding: const EdgeInsets.all(24.0),
         child: Column(
@@ -876,8 +1434,8 @@ class PremiumCategoryScreen extends StatelessWidget {
                 mainAxisSpacing: 12,
                 childAspectRatio: 1.0,
                 children: _categories.map((category) {
-                  return ElevatedButton(
-                    onPressed: () {
+                  return GestureDetector(
+                    onTap: () {
                       Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (_) =>
@@ -885,14 +1443,81 @@ class PremiumCategoryScreen extends StatelessWidget {
                         ),
                       );
                     },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.black,
-                      padding: const EdgeInsets.all(12),
-                    ),
-                    child: Text(
-                      category,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(fontSize: 14),
+                    child: Card(
+                      elevation: 4,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: Image.network(
+                              _getCategoryImage(category),
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Container(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.primary.withAlpha(100),
+                                  child: const Center(
+                                    child: Icon(
+                                      Icons.checkroom,
+                                      size: 36,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                );
+                              },
+                              loadingBuilder:
+                                  (context, child, loadingProgress) {
+                                    if (loadingProgress == null) return child;
+                                    return Container(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.primary.withAlpha(50),
+                                      child: const Center(
+                                        child: CircularProgressIndicator(),
+                                      ),
+                                    );
+                                  },
+                            ),
+                          ),
+                          Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(12),
+                              gradient: LinearGradient(
+                                begin: Alignment.bottomCenter,
+                                end: Alignment.topCenter,
+                                colors: [
+                                  Colors.black.withAlpha(150),
+                                  Colors.transparent,
+                                ],
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            bottom: 0,
+                            left: 0,
+                            right: 0,
+                            child: Padding(
+                              padding: const EdgeInsets.all(8.0),
+                              child: Text(
+                                category,
+                                textAlign: TextAlign.center,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   );
                 }).toList(),
@@ -908,7 +1533,7 @@ class PremiumCategoryScreen extends StatelessWidget {
                 );
               },
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.black,
+                backgroundColor: Theme.of(context).colorScheme.primary,
                 padding: const EdgeInsets.symmetric(vertical: 16),
               ),
               child: const Text('Done'),
@@ -975,11 +1600,7 @@ class _ClothesCameraScreenState extends State<ClothesCameraScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.category),
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
-      ),
+      appBar: AppBar(title: Text(widget.category)),
       body: Column(
         children: [
           Expanded(
@@ -1001,7 +1622,7 @@ class _ClothesCameraScreenState extends State<ClothesCameraScreen> {
                 ElevatedButton(
                   onPressed: _takePhoto,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.black,
+                    backgroundColor: Theme.of(context).colorScheme.primary,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                   ),
                   child: const Text('Capture Photo'),
@@ -1064,11 +1685,7 @@ class OutfitCreationScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Outfit Creation'),
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
-      ),
+      appBar: AppBar(title: const Text('Outfit Creation')),
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -1097,7 +1714,7 @@ class OutfitCreationScreen extends StatelessWidget {
                 );
               },
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.black,
+                backgroundColor: Theme.of(context).colorScheme.primary,
                 padding: const EdgeInsets.symmetric(
                   horizontal: 32,
                   vertical: 16,
@@ -1156,11 +1773,7 @@ class _OutfitOptionsScreenState extends State<OutfitOptionsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Create Outfit Criteria'),
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
-      ),
+      appBar: AppBar(title: const Text('Create Outfit Criteria')),
       body: Padding(
         padding: const EdgeInsets.all(24.0),
         child: Column(
@@ -1246,7 +1859,9 @@ class _OutfitOptionsScreenState extends State<OutfitOptionsScreen> {
                     }
                   : null,
               style: ElevatedButton.styleFrom(
-                backgroundColor: _canGenerate ? Colors.black : Colors.grey,
+                backgroundColor: _canGenerate
+                    ? Theme.of(context).colorScheme.primary
+                    : Colors.grey,
                 padding: const EdgeInsets.symmetric(vertical: 16),
               ),
               child: const Text('Done'),
@@ -1275,11 +1890,7 @@ class GeneratedOutfitsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Generated Outfits'),
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
-      ),
+      appBar: AppBar(title: const Text('Generated Outfits')),
       body: photos.isEmpty
           ? const Center(
               child: Padding(
@@ -1357,5 +1968,5 @@ class GeneratedOutfitsScreen extends StatelessWidget {
               ),
             ),
     );
-  }
+  }   
 }
