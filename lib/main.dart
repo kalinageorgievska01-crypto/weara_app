@@ -61,8 +61,7 @@ class AuthService {
     }
   }
 
-  static Future<UserData?> loginUser(
-      String username, String password) async {
+  static Future<UserData?> loginUser(String username, String password) async {
     try {
       if (!usersBox.containsKey(username)) {
         return null;
@@ -272,9 +271,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (user != null) {
         selectedGenderNotifier.value = user.gender;
-        Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const SelfieScreen()),
-        );
+        Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const SelfieScreen()));
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -918,38 +917,18 @@ class FemaleFreeCategoryScreen extends StatelessWidget {
   const FemaleFreeCategoryScreen({super.key});
 
   static const List<Map<String, String>> _femaleCategories = [
-    {
-      'name': 'Shorts',
-      'image': 'assets/female/1_shorts.jpg',
-    },
-    {
-      'name': 'Dresses',
-      'image': 'assets/female/4_dress.jpg',
-    },
-    {
-      'name': 'Skirts',
-      'image': 'assets/female/5_skirts.jpg',
-    },
-    {
-      'name': 'Pants/Sweats',
-      'image': 'assets/female/6_pants.jpg',
-    },
-    {
-      'name': 'Jeans',
-      'image': 'assets/female/7_jeans.jpg',
-    },
-    {
-      'name': 'Shirts',
-      'image': 'assets/female/8_shirts.jpg',
-    },
+    {'name': 'Shorts', 'image': 'assets/female/1_shorts.jpg'},
+    {'name': 'Dresses', 'image': 'assets/female/4_dress.jpg'},
+    {'name': 'Skirts', 'image': 'assets/female/5_skirts.jpg'},
+    {'name': 'Pants/Sweats', 'image': 'assets/female/6_pants.jpg'},
+    {'name': 'Jeans', 'image': 'assets/female/7_jeans.jpg'},
+    {'name': 'Shirts', 'image': 'assets/female/8_shirts.jpg'},
   ];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Select'),
-      ),
+      appBar: AppBar(title: const Text('Select')),
       body: Padding(
         padding: const EdgeInsets.all(24.0),
         child: Column(
@@ -991,10 +970,9 @@ class FemaleFreeCategoryScreen extends StatelessWidget {
                               fit: BoxFit.cover,
                               errorBuilder: (context, error, stackTrace) {
                                 return Container(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .primary
-                                      .withAlpha(100),
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.primary.withAlpha(100),
                                   child: const Center(
                                     child: Icon(
                                       Icons.checkroom,
@@ -1055,8 +1033,7 @@ class FemaleFreeCategoryScreen extends StatelessWidget {
                 );
               },
               style: ElevatedButton.styleFrom(
-                backgroundColor:
-                    Theme.of(context).colorScheme.primary,
+                backgroundColor: Theme.of(context).colorScheme.primary,
                 padding: const EdgeInsets.symmetric(vertical: 16),
               ),
               child: const Text('Done'),
@@ -1968,5 +1945,5 @@ class GeneratedOutfitsScreen extends StatelessWidget {
               ),
             ),
     );
-  }   
+  }
 }
