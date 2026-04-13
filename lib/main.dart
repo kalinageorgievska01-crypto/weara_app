@@ -497,7 +497,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 const Text('Gender', style: TextStyle(fontSize: 16)),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
-                  initialValue: _selectedGender,
+                  value: _selectedGender,
                   decoration: const InputDecoration(
                     border: OutlineInputBorder(),
                   ),
@@ -524,7 +524,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 const Text('Language', style: TextStyle(fontSize: 16)),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
-                  initialValue: _selectedLanguage,
+                  value: _selectedLanguage,
                   decoration: const InputDecoration(
                     border: OutlineInputBorder(),
                   ),
@@ -706,8 +706,8 @@ class _SelfieScreenState extends State<SelfieScreen> {
                             child: Text(
                               _selfie == null
                                   ? _isCountingDown
-                                        ? 'Hold still... Taking photo in $_countdown'
-                                        : 'Stand inside the outline. Photo will be taken automatically.'
+                                      ? 'Hold still... Taking photo in $_countdown'
+                                      : 'Stand inside the outline. Photo will be taken automatically.'
                                   : 'Photo captured! Tap restart to take another.',
                               style: const TextStyle(
                                 color: Colors.white,
@@ -1270,16 +1270,16 @@ class ClothesCategoryScreen extends StatelessWidget {
                               },
                               loadingBuilder:
                                   (context, child, loadingProgress) {
-                                    if (loadingProgress == null) return child;
-                                    return Container(
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.primary.withAlpha(50),
-                                      child: const Center(
-                                        child: CircularProgressIndicator(),
-                                      ),
-                                    );
-                                  },
+                                if (loadingProgress == null) return child;
+                                return Container(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.primary.withAlpha(50),
+                                  child: const Center(
+                                    child: CircularProgressIndicator(),
+                                  ),
+                                );
+                              },
                             ),
                           ),
                           Container(
@@ -1449,16 +1449,16 @@ class PremiumCategoryScreen extends StatelessWidget {
                               },
                               loadingBuilder:
                                   (context, child, loadingProgress) {
-                                    if (loadingProgress == null) return child;
-                                    return Container(
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.primary.withAlpha(50),
-                                      child: const Center(
-                                        child: CircularProgressIndicator(),
-                                      ),
-                                    );
-                                  },
+                                if (loadingProgress == null) return child;
+                                return Container(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.primary.withAlpha(50),
+                                  child: const Center(
+                                    child: CircularProgressIndicator(),
+                                  ),
+                                );
+                              },
                             ),
                           ),
                           Container(
@@ -1762,7 +1762,7 @@ class _OutfitOptionsScreenState extends State<OutfitOptionsScreen> {
             ),
             const SizedBox(height: 24),
             DropdownButtonFormField<String>(
-              initialValue: _selectedLocation,
+              value: _selectedLocation,
               decoration: const InputDecoration(
                 labelText: 'Location',
                 border: OutlineInputBorder(),
@@ -1783,7 +1783,7 @@ class _OutfitOptionsScreenState extends State<OutfitOptionsScreen> {
             ),
             const SizedBox(height: 16),
             DropdownButtonFormField<String>(
-              initialValue: _selectedStyle,
+              value: _selectedStyle,
               decoration: const InputDecoration(
                 labelText: 'Style',
                 border: OutlineInputBorder(),
@@ -1802,7 +1802,7 @@ class _OutfitOptionsScreenState extends State<OutfitOptionsScreen> {
             ),
             const SizedBox(height: 16),
             DropdownButtonFormField<String>(
-              initialValue: _selectedWeather,
+              value: _selectedWeather,
               decoration: const InputDecoration(
                 labelText: 'Weather',
                 border: OutlineInputBorder(),
